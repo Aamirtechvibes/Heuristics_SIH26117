@@ -115,5 +115,3 @@ Here's a comprehensive list of things we can do besides coding:
 - Create FAQs
 
 ---
-
-What would you like to do? Given that you have SIH.md and modes/ in your repo, I suspect you're working on a Smart India Hackathon project — I can help with proposals, problem statements, presentations, or anything else for that! 🚀
