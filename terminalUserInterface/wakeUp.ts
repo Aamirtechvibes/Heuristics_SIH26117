@@ -38,25 +38,29 @@ export async function runWakeUp() {
     printBannerWithShadow(ascii);
 
     const mode = await select({
-        message: "Which mode you want to proceed with?",
+        message: "Which mode would you like to proceed with?",
         options: [
-            { value: "cli", label: "CLI" },
-            { value: "telegram", label: "Telegram" },
+            { value: "sovereign", label: "🛡️  Sovereign AI Workbench (MRPL Hackathon Demo)" },
+            { value: "cli", label: "💻 Agent Aamir CLI" },
+            { value: "telegram", label: "📱 Telegram Bot" },
             { value: "exit", label: "Exit" }
         ]
     });
 
-    if (isCancel(mode || mode === "exit")) {
+    if (isCancel(mode) || mode === "exit") {
         console.log(chalk.dim('\n Goodbye. \n'));
         return;
     }
 
-    if (mode === "cli") {
-        // console.log(chalk.dim('\n Strating CLI mode \n'));
-        await runCliMode()
+    if (mode === "sovereign") {
+        const { runAuraSovereignDemo } = await import("../aura/demo/run-aura-demo.ts");
+        await runAuraSovereignDemo();
+    }
+
+    else if (mode === "cli") {
+        await runCliMode();
     }
     else if (mode === "telegram") {
-        //console.log(chalk.dim('\n Strating Telegram mode \n'));
-        await runTelegramMode()
+        await runTelegramMode();
     }
 }

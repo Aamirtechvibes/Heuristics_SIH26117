@@ -1,0 +1,23 @@
+{
+  "unit": "CDU-1",
+  "facility": "Mangalore Refinery and Petrochemicals Limited",
+  "equipment": [
+    {
+      "id": "EX-402A",
+      "name": "Crude Pre-Heat Exchanger Shell",
+      "designPressureBar": 18.5,
+      "designTempC": 280,
+      "tMinMm": 4.5,
+      "nominalThicknessMm": 10.0,
+      "sopReference": "MRPL-SOP-MNT-2024-04"
+    },
+    {
+      "id": "P-101A",
+      "name": "Crude Charge Pump",
+      "designPressureBar": 25.0,
+      "designTempC": 120,
+      "vibrationLimitMmS": 4.5,
+      "sopReference": "MRPL-SOP-MNT-2024-02"
+    }
+  ]
+}

@@ -1,34 +1,68 @@
-# dependencies (bun install)
-node_modules
+# Dependencies
+node_modules/
+**/node_modules/
 
-# output
-out
-dist
-*.tgz
-
-# code coverage
-coverage
-*.lcov
-
-# logs
-logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-
-# dotenv environment variable files
+# Environment / secrets
 .env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+.env.*
+!.env.example
 
-# caches
-.eslintcache
-.cache
-*.tsbuildinfo
+# Logs
+*.log
+logs/
+npm-debug.log*
+bun-debug.log*
 
-# IntelliJ based IDEs
-.idea
-
-# Finder (MacOS) folder config
+# OS
 .DS_Store
+Thumbs.db
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# Build output
+dist/
+build/
+.next/
+out/
+coverage/
+*.tgz
+*.tsbuildinfo
+.eslintcache
+
+# Temporary files & Scratch
+tmp/
+temp/
+.cache/
+*.tmp
+*.temp
+scratch_sandbox/
+
+# Generated artifacts & deliverables
+output_deliverables/
+*.docx
+*.xlsx
+*.pptx
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime data & locks
+*.pid
+
+# Local model/runtime data
+models/
+ollama-data/
+*.gguf
+
+# Debug/test generated output
+test-output/
+screenshots/
+artifacts/
+playwright-report/

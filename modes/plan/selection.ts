@@ -32,7 +32,7 @@ export async function selectSteps(plan: Plan): Promise<PlanStep[]> {
     hint: s.complexity ?? '',
   }));
 
-  const picked = await multiselect<string>({
+  const picked = await multiselect<string>({ 
     message: 'Select steps to execute (space toggles, enter confirms)',
     options,
     initialValues: plan.steps.map((s) => s.id),

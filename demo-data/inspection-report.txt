@@ -1,0 +1,21 @@
+MANGALORE REFINERY AND PETROCHEMICALS LIMITED (MRPL)
+ANNUAL NDT & ULTRASONIC INSPECTION REPORT
+
+INSPECTION DATE: 2026-09-15
+INSPECTOR: Lead Reliability Engineer, CDU-1
+LOCATION: CDU-1 Unit Pre-Heat Exchanger Bank
+
+EQUIPMENT IDENTIFIER: EX-402A
+EQUIPMENT NAME: Crude Pre-Heat Exchanger Shell
+OPERATING TEMPERATURE: 245°C
+OPERATING PRESSURE: 14.2 bar
+
+OBSERVED DEFECTS & FINDINGS:
+1. Ultrasonic thickness scanning (UT) conducted along the lower shell circumference.
+2. Severe localized pitting corrosion detected on lower shell wall near inlet nozzle N2.
+3. Measured Wall Thickness: 3.10 mm
+4. Allowable Minimum Limit (T-min): 4.50 mm
+5. Status: CRITICAL WALL THINNING HAZARD.
+
+RECOMMENDED ACTION:
+Perform immediate isolation and execute shell segment weld overlay / replacement according to MRPL SOP-MNT-2024-04 Section 4.2. Submit formal Approval Note for engineering signoff.

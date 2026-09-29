@@ -1,0 +1,21 @@
+MANGALORE REFINERY AND PETROCHEMICALS LIMITED (MRPL)
+ANNUAL NDT & ULTRASONIC INSPECTION REPORT - SAFE MARGIN CASE
+
+INSPECTION DATE: 2026-09-28
+INSPECTOR: Lead Reliability Engineer, CDU-1
+LOCATION: CDU-1 Unit Pre-Heat Exchanger Bank
+
+EQUIPMENT IDENTIFIER: EX-402B
+EQUIPMENT NAME: Secondary Pre-Heat Exchanger Shell
+OPERATING TEMPERATURE: 210°C
+OPERATING PRESSURE: 12.0 bar
+
+OBSERVED DEFECTS & FINDINGS:
+1. Ultrasonic thickness scanning (UT) conducted along shell circumference.
+2. Uniform surface condition with negligible wall loss observed.
+3. Measured Wall Thickness: 5.20 mm
+4. Allowable Minimum Limit (T-min): 4.50 mm
+5. Status: SAFE OPERATING MARGIN ACCEPTABLE.
+
+RECOMMENDED ACTION:
+Continue routine scheduled monitoring per MRPL SOP-MNT-2024-04. Next inspection scheduled in 12 months.

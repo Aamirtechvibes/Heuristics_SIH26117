@@ -12,9 +12,17 @@ program
 
 program
     .command("wakeup")
-    .description("Show the banner and pick cli or telegram mode")
+    .description("Show the banner and pick mode")
     .action(async () => {
         await runWakeUp()
+    });
+
+program
+    .command("demo")
+    .description("Run AURA Sovereign AI Workbench Industrial Demo (MRPL SIH26117)")
+    .action(async () => {
+        const { runAuraSovereignDemo } = await import("./aura/demo/run-aura-demo.ts");
+        await runAuraSovereignDemo();
     });
 
 await program.parseAsync(process.argv);

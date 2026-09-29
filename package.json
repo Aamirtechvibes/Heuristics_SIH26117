@@ -6,14 +6,29 @@
   "bin": {
     "agent-build": "./index.ts"
   },
+  "scripts": {
+    "demo": "bun aura/demo/run-aura-demo.ts",
+    "demo:full": "bun aura/demo/run-aura-demo.ts",
+    "demo:judge": "bun aura/demo/run-judge-demo.ts",
+    "demo:offline": "SOVEREIGN_MODE=true bun aura/demo/run-aura-demo.ts",
+    "api": "bun aura/api/server.ts",
+    "test": "bun test",
+    "start": "bun index.ts wakeup"
+  },
+
+
+
+
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/pdf-parse": "^1.1.5",
     "prettier": "^3.9.6"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.80",
     "@clack/core": "^1.4.3",
     "@clack/prompts": "^1.7.0",
     "@mendable/firecrawl-js": "^4.38.0",
@@ -24,8 +39,12 @@
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
     "diff": "^9.0.0",
+    "docx": "^9.8.1",
+    "exceljs": "^4.4.0",
     "figlet": "^1.11.4",
     "marked-terminal": "^7.3.0",
+    "pdf-parse": "^2.4.5",
+    "pptxgenjs": "^4.0.1",
     "telegraf": "^4.16.3"
   }
 }

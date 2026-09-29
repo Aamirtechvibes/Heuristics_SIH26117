@@ -1,0 +1,23 @@
+# MANGALORE REFINERY AND PETROCHEMICALS LIMITED (MRPL)
+## STANDARD OPERATING PROCEDURE: MECHANICAL EQUIPMENT MAINTENANCE & CORROSION REPAIR
+**Document Reference:** MRPL-SOP-MNT-2024-04
+**Classification:** INTERNAL CONFIDENTIAL - REFINERY OPERATIONS
+
+SECTION 1: PURPOSE & SCOPE
+This procedure applies to pressure vessels, heat exchangers, and piping circuits operating in Crude Distillation Units (CDU), Fluidized Catalytic Cracking Units (FCCU), and Hydrocracker Units (HCU).
+
+SECTION 2: MINIMUM ALLOWABLE WALL THICKNESS (T-MIN) STANDARDS
+Per ASME Section VIII Div 1 & API 510 inspection standards, any pressure vessel component exhibiting wall thickness below calculated T-min must be classified immediately as a CRITICAL SAFETY HAZARD.
+
+SECTION 3: EQUIPMENT CORROSION & DEFECT PROTOCOL
+Equipment ID: EX-402A / EX-402B (Crude Pre-Heat Exchangers)
+- Nominal Design Thickness: 10.00 mm
+- Minimum Allowable Thickness (T-min): 4.50 mm
+- Maximum Allowable Operating Pressure (MAOP): 18.5 bar at 280°C
+
+SECTION 4.2: EMERGENCY REPAIR PROTOCOL FOR T-MIN DEFICIT
+1. When measured wall thickness is <= 4.50 mm:
+   a. Immediately flag equipment for CRITICAL ISOLATION.
+   b. Initiate weld overlay patch or complete shell segment replacement.
+   c. Perform 100% Radiographic Testing (RT) and Ultrasonic Testing (UT) per NDT Protocol NDT-UT-09.
+   d. Prepare an official Engineering Approval Note for Chief Reliability Engineer signoff prior to restart.
