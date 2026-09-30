@@ -11,7 +11,7 @@ import { DeliverableTools } from "../tools/deliverable-tools";
 
 const PORT = 3001;
 
-export function startAuraApiServer() {
+export function startAuraApiServer(port: number = PORT) {
     const guard = SovereigntyGuard.getInstance();
     guard.setSovereignMode(true);
 
@@ -28,32 +28,36 @@ export function startAuraApiServer() {
         fs.mkdirSync(uploadsDir, { recursive: true });
     }
 
-    console.log(`\n🛡️ [AURA API SERVER] Starting Sovereign AI Workbench API on http://localhost:${PORT}...`);
+    console.log(`\n🛡️ [AURA API SERVER] Starting Sovereign AI Workbench API on http://localhost:${port}...`);
 
-    Bun.serve({
-        port: PORT,
+    const server = Bun.serve({
+        port,
         async fetch(req) {
             const url = new URL(req.url);
+            const pathname = url.pathname.length > 1 ? url.pathname.replace(/\/$/, "") : url.pathname;
 
-            // Enable CORS
+            // Enable CORS for OPTIONS preflight
             if (req.method === "OPTIONS") {
                 return new Response(null, {
+                    status: 204,
                     headers: {
                         "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                        "Access-Control-Allow-Headers": "Content-Type",
+                        "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+                        "Access-Control-Allow-Headers": "*",
                     },
                 });
             }
 
             const headers = {
                 "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+                "Access-Control-Allow-Headers": "*",
                 "Content-Type": "application/json",
             };
 
             // Serve static output deliverable files for download
-            if (url.pathname.startsWith("/output_deliverables/")) {
-                const relativePath = url.pathname.replace("/output_deliverables/", "");
+            if (pathname.startsWith("/output_deliverables/")) {
+                const relativePath = pathname.replace("/output_deliverables/", "");
                 const filePath = path.join(process.cwd(), "output_deliverables", relativePath);
                 if (fs.existsSync(filePath)) {
                     const fileBuffer = fs.readFileSync(filePath);
@@ -74,18 +78,27 @@ export function startAuraApiServer() {
             }
 
             // GET /api/ollama-health
-            if (url.pathname === "/api/ollama-health" && req.method === "GET") {
+            if (pathname === "/api/ollama-health") {
+                if (req.method !== "GET") {
+                    return new Response(JSON.stringify({ error: "Method Not Allowed" }), { headers, status: 405 });
+                }
                 const health = await router.getProvider().getHealthStatus();
                 return new Response(JSON.stringify(health), { headers });
             }
 
             // GET /api/sovereignty
-            if (url.pathname === "/api/sovereignty" && req.method === "GET") {
+            if (pathname === "/api/sovereignty") {
+                if (req.method !== "GET") {
+                    return new Response(JSON.stringify({ error: "Method Not Allowed" }), { headers, status: 405 });
+                }
                 return new Response(JSON.stringify(guard.getLedgerSummary()), { headers });
             }
 
             // POST /api/test-sovereignty
-            if (url.pathname === "/api/test-sovereignty" && req.method === "POST") {
+            if (pathname === "/api/test-sovereignty") {
+                if (req.method !== "POST") {
+                    return new Response(JSON.stringify({ error: "Method Not Allowed" }), { headers, status: 405 });
+                }
                 try {
                     await fetch("https://openrouter.ai/api/v1/chat/completions");
                 } catch (e: any) {
@@ -94,8 +107,18 @@ export function startAuraApiServer() {
                 return new Response(JSON.stringify(guard.getLedgerSummary()), { headers });
             }
 
-            // POST /api/upload
-            if (url.pathname === "/api/upload" && req.method === "POST") {
+            // /api/upload (POST for file upload, GET for status check)
+            if (pathname === "/api/upload") {
+                if (req.method === "GET") {
+                    return new Response(JSON.stringify({
+                        status: "active",
+                        endpoint: "/api/upload",
+                        message: "Upload endpoint is active. Send POST with multipart/form-data to upload files."
+                    }), { headers, status: 200 });
+                }
+                if (req.method !== "POST") {
+                    return new Response(JSON.stringify({ error: "Method Not Allowed. Use POST." }), { headers, status: 405 });
+                }
                 try {
                     const formData = await req.formData();
                     const file = formData.get("file") as File | null;
@@ -135,7 +158,10 @@ export function startAuraApiServer() {
             }
 
             // POST /api/run-task
-            if (url.pathname === "/api/run-task" && req.method === "POST") {
+            if (pathname === "/api/run-task") {
+                if (req.method !== "POST") {
+                    return new Response(JSON.stringify({ error: "Method Not Allowed. Use POST." }), { headers, status: 405 });
+                }
                 try {
                     const body = await req.json() as {
                         runId?: string;
