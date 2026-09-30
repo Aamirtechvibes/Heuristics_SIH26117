@@ -100,19 +100,30 @@ export function startAuraApiServer() {
                     const formData = await req.formData();
                     const file = formData.get("file") as File | null;
                     const category = (formData.get("category") as string) || "report";
+                    let runId = (formData.get("runId") as string) || "";
 
                     if (!file) {
                         return new Response(JSON.stringify({ error: "No file provided" }), { headers, status: 400 });
                     }
 
+                    if (!runId) {
+                        runId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                    }
+
+                    const runUploadsDir = path.join(uploadsDir, runId);
+                    if (!fs.existsSync(runUploadsDir)) {
+                        fs.mkdirSync(runUploadsDir, { recursive: true });
+                    }
+
                     const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-                    const targetPath = path.join(uploadsDir, safeName);
+                    const targetPath = path.join(runUploadsDir, safeName);
 
                     const arrayBuffer = await file.arrayBuffer();
                     fs.writeFileSync(targetPath, Buffer.from(arrayBuffer));
 
                     return new Response(JSON.stringify({
                         success: true,
+                        runId,
                         filePath: targetPath,
                         fileName: file.name,
                         savedName: safeName,
@@ -127,35 +138,58 @@ export function startAuraApiServer() {
             if (url.pathname === "/api/run-task" && req.method === "POST") {
                 try {
                     const body = await req.json() as {
+                        runId?: string;
                         taskPrompt?: string;
                         reportFile?: string;
                         sopFiles?: string[];
                         isLiveUpload?: boolean;
                     };
 
-                    const taskDescription = body.taskPrompt || "Analyze inspection report for EX-402A, cross-check against refinery maintenance SOP, calculate safe operating life deficit, and prepare formal DOCX approval note.";
+                    const runId = body.runId || `run_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                    const isLiveUpload = Boolean(body.isLiveUpload);
+                    const mode = isLiveUpload ? "LIVE UPLOAD" : "DEMO PRESET";
+
+                    const taskDescription = body.taskPrompt || "Analyze inspection report, cross-check against refinery maintenance SOP, calculate safe operating life deficit, and prepare formal DOCX approval note.";
 
                     let reportPath: string;
-                    if (body.reportFile && fs.existsSync(body.reportFile)) {
-                        reportPath = body.reportFile;
-                    } else if (body.reportFile && fs.existsSync(path.join(process.cwd(), "demo-data", body.reportFile))) {
-                        reportPath = path.join(process.cwd(), "demo-data", body.reportFile);
+                    if (isLiveUpload) {
+                        if (body.reportFile && fs.existsSync(body.reportFile)) {
+                            reportPath = body.reportFile;
+                        } else if (body.reportFile && fs.existsSync(path.join(uploadsDir, runId, body.reportFile))) {
+                            reportPath = path.join(uploadsDir, runId, body.reportFile);
+                        } else if (body.reportFile && fs.existsSync(path.join(uploadsDir, body.reportFile))) {
+                            reportPath = path.join(uploadsDir, body.reportFile);
+                        } else {
+                            return new Response(JSON.stringify({
+                                error: `LIVE UPLOAD error: No uploaded report file found for run ${runId}. Silently defaulting to demo reports is disabled.`,
+                                success: false
+                            }), { headers, status: 400 });
+                        }
                     } else {
-                        reportPath = path.join(process.cwd(), "demo-data", "inspection-report-A.txt");
+                        // DEMO PRESET mode
+                        if (body.reportFile && fs.existsSync(body.reportFile)) {
+                            reportPath = body.reportFile;
+                        } else if (body.reportFile && fs.existsSync(path.join(process.cwd(), "demo-data", body.reportFile))) {
+                            reportPath = path.join(process.cwd(), "demo-data", body.reportFile);
+                        } else {
+                            reportPath = path.join(process.cwd(), "demo-data", "inspection-report-A.txt");
+                        }
                     }
 
-                    const sopDirectoryPath = path.join(process.cwd(), "demo-data");
-                    const outputDirectory = path.join(process.cwd(), "output_deliverables");
+                    const outputDirectory = path.join(process.cwd(), "output_deliverables", runId);
+                    if (!fs.existsSync(outputDirectory)) {
+                        fs.mkdirSync(outputDirectory, { recursive: true });
+                    }
 
                     let state = graph.createInitialState({
                         taskDescription,
                         documentPath: reportPath,
-                        sopDirectoryPath,
+                        sopDirectoryPath: path.join(process.cwd(), "demo-data"),
                         outputDirectory
                     });
 
                     // 1. UNDERSTAND
-                    state = graph.transition(state, "UNDERSTAND", `Inspected industrial request and input document (${path.basename(reportPath)}).`);
+                    state = graph.transition(state, "UNDERSTAND", `[${mode} - Run: ${runId}] Inspected industrial request for input document (${path.basename(reportPath)}).`);
 
                     // 2. ROUTE
                     const visionRoute = await router.routeTask("vision_ocr", taskDescription);
@@ -180,18 +214,46 @@ export function startAuraApiServer() {
                         1100
                     );
 
-                    const targetFinding = parsedDoc.findings[0];
+                    const targetFinding = parsedDoc.findings[0] || {
+                        equipmentId: "UNKNOWN-001",
+                        equipmentName: "Process Vessel",
+                        inspectionDate: new Date().toISOString().split("T")[0],
+                        defectDescription: "Wall thickness loss",
+                        measuredValue: "3.50 mm",
+                        allowableLimit: "4.50 mm",
+                        severity: "CRITICAL",
+                        recommendedAction: "Inspect equipment immediately",
+                        sopReference: "SOP-MNT-2024",
+                        measuredNumeric: 3.50,
+                        allowableNumeric: 4.50
+                    };
                     state = graph.transition(state, "PROCESS_DOCUMENT", `Parsed ${parsedDoc.fileName}. Extracted equipment ID ${targetFinding.equipmentId} (Measured: ${targetFinding.measuredValue} vs Allowable T-min: ${targetFinding.allowableLimit}).`);
 
-                    // 4. RETRIEVE_KNOWLEDGE
-                    await retriever.indexDirectory(sopDirectoryPath);
-                    if (fs.existsSync(uploadsDir)) {
-                        await retriever.indexDirectory(uploadsDir);
+                    // 4. RETRIEVE_KNOWLEDGE - ISOLATE SOP ONLY (No Report B / Previous Runs)
+                    retriever.reset();
+                    const sopFilesToIndex: string[] = [];
+
+                    if (isLiveUpload && body.sopFiles && body.sopFiles.length > 0) {
+                        for (const sopFile of body.sopFiles) {
+                            if (fs.existsSync(sopFile)) sopFilesToIndex.push(sopFile);
+                            else if (fs.existsSync(path.join(uploadsDir, runId, sopFile))) sopFilesToIndex.push(path.join(uploadsDir, runId, sopFile));
+                            else if (fs.existsSync(path.join(uploadsDir, sopFile))) sopFilesToIndex.push(path.join(uploadsDir, sopFile));
+                        }
                     }
+
+                    // Default SOP if no specific SOP provided
+                    if (sopFilesToIndex.length === 0) {
+                        const defaultSop = path.join(process.cwd(), "demo-data", "sop-maintenance.txt");
+                        if (fs.existsSync(defaultSop)) {
+                            sopFilesToIndex.push(defaultSop);
+                        }
+                    }
+
+                    await retriever.indexKnowledgeFiles(sopFilesToIndex);
 
                     const evidence = retriever.retrieveEvidence(`${targetFinding.equipmentId} ${targetFinding.defectDescription}`, 5);
                     state.retrievedEvidence = evidence;
-                    state = graph.transition(state, "RETRIEVE_KNOWLEDGE", `Indexed local SOP manuals & uploads. Retrieved ${evidence.length} evidence snippets.`);
+                    state = graph.transition(state, "RETRIEVE_KNOWLEDGE", `Indexed ${sopFilesToIndex.length} SOP knowledge files. Retrieved ${evidence.length} evidence snippets.`);
 
                     // 5. CALCULATE
                     const calcCode = `
@@ -236,7 +298,7 @@ else:
                         state = graph.transition(state, "BRANCH_NORMAL_MAINTENANCE", `CONDITIONAL BRANCH TAKEN: Measured ${targetFinding.measuredValue} >= T-min ${targetFinding.allowableLimit} -> Branching to NORMAL_MAINTENANCE_MONITORING.`);
                     }
 
-                    // 7. GENERATE_DELIVERABLES
+                    // 7. GENERATE_DELIVERABLES IN PER-RUN DIRECTORY
                     const deliverables = await deliverableGen.generateAll({
                         taskDescription,
                         equipmentId: targetFinding.equipmentId,
@@ -245,10 +307,19 @@ else:
                         calculationOutput: calcRes.stdout,
                         verificationStatus: state.verificationStatus,
                         isHazard: isCritical,
-                        outputDirectory
+                        outputDirectory,
+                        runId,
+                        sourceFile: path.basename(reportPath)
                     });
-                    state.deliverables = deliverables;
-                    state = graph.transition(state, "GENERATE_DELIVERABLES", "Created DOCX, XLSX Sheet, and PPTX Executive Summary.");
+                    
+                    const deliverableUrls = {
+                        docx: `/output_deliverables/${runId}/${path.basename(deliverables.docx)}`,
+                        xlsx: `/output_deliverables/${runId}/${path.basename(deliverables.xlsx)}`,
+                        pptx: `/output_deliverables/${runId}/${path.basename(deliverables.pptx)}`
+                    };
+
+                    state.deliverables = deliverableUrls;
+                    state = graph.transition(state, "GENERATE_DELIVERABLES", `Created DOCX, XLSX Sheet, and PPTX Deck in output_deliverables/${runId}/.`);
 
                     // 8. AWAIT_APPROVAL
                     state = graph.transition(state, "AWAIT_APPROVAL", "Staged deliverables ready. Engineering signoff requested.");
@@ -257,10 +328,12 @@ else:
                     const healthStatus = await router.getProvider().getHealthStatus();
 
                     return new Response(JSON.stringify({
+                        runId,
                         state,
                         telemetry,
                         healthStatus,
-                        mode: body.isLiveUpload ? "LIVE UPLOAD" : "DEMO PRESET",
+                        deliverableUrls,
+                        mode,
                         success: true
                     }), { headers });
                 } catch (err: any) {

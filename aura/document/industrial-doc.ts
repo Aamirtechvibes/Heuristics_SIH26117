@@ -65,10 +65,10 @@ export class IndustrialDocumentParser {
                     fullText = data.text || "";
                     totalPages = data.numpages || 1;
                 } else {
-                    fullText = buffer.toString("utf-8");
+                    fullText = this.cleanPdfRawBytes(buffer.toString("utf-8"));
                 }
             } catch (e) {
-                fullText = buffer.toString("utf-8");
+                fullText = this.cleanPdfRawBytes(buffer.toString("utf-8"));
             }
         } else {
             fullText = fs.readFileSync(filePath, "utf-8");
@@ -88,6 +88,28 @@ export class IndustrialDocumentParser {
         };
     }
 
+    private cleanPdfRawBytes(raw: string): string {
+        // Strip raw PDF binary stream noise and retain Tj text operators
+        const textParts: string[] = [];
+        const tjMatches = raw.matchAll(/\((.*?)\)\s*Tj/g);
+        for (const m of tjMatches) {
+            if (m[1] && m[1].trim()) textParts.push(m[1].replace(/\\/g, ""));
+        }
+
+        if (textParts.length > 0) {
+            return textParts.join("\n");
+        }
+
+        // Fallback: strip PDF structural tokens (%PDF-1.4, stream, obj, xref)
+        return raw
+            .replace(/%PDF-[0-9.]+/g, "")
+            .replace(/<<[\s\S]*?>>/g, "")
+            .replace(/stream[\s\S]*?endstream/g, "")
+            .replace(/endobj|startxref|trailer|xref/g, "")
+            .replace(/[^\x20-\x7E\n]/g, " ")
+            .trim();
+    }
+
     /**
      * Dynamic extraction of findings from report text
      */
@@ -95,12 +117,14 @@ export class IndustrialDocumentParser {
         const findings: EquipmentFinding[] = [];
         const lines = text.split("\n");
 
-        // Equipment ID extraction
-        const eqMatch = text.match(/\b(EX-\d+[A-Z]?|P-\d+[A-Z]?|V-\d+|K-\d+|T-\d+|C-\d+)\b/i);
-        const equipmentId = eqMatch ? eqMatch[1].toUpperCase() : "EX-402A";
+        // Dynamic Equipment ID extraction (must start with letter to avoid matching dates like 2026-09)
+        const labelMatch = text.match(/(?:EQUIPMENT\s*(?:IDENTIFIER|ID|TAG|CODE)?|TAG\s*NO)\s*[:=]\s*([A-Z0-9\-_]+)/i);
+        const eqMatch = labelMatch || text.match(/\b([A-Z][A-Z0-9_]*-[A-Z0-9_-]+)\b/i);
+        const baseNameId = path.basename(fileName, path.extname(fileName)).toUpperCase().replace(/[^A-Z0-9-]/g, "_");
+        const equipmentId = eqMatch ? eqMatch[1].toUpperCase() : (baseNameId.includes("REPORT") ? "EQUIPMENT-01" : baseNameId);
 
         // Equipment Name extraction
-        let equipmentName = "Refinery Equipment";
+        let equipmentName = `${equipmentId} Shell / Component`;
         const eqNameMatch = text.match(/EQUIPMENT NAME:\s*(.+)/i);
         if (eqNameMatch) equipmentName = eqNameMatch[1].trim();
 
@@ -108,22 +132,30 @@ export class IndustrialDocumentParser {
         const dateMatch = text.match(/\b(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})\b/);
         const inspectionDate = dateMatch ? dateMatch[1] : new Date().toISOString().split("T")[0];
 
-        // Measured Wall Thickness regex (e.g., "Measured Wall Thickness: 3.10 mm" or "3.10mm" or "5.20 mm")
-        const measuredMatch = text.match(/Measured\s+(?:Wall\s+)?Thickness:?\s*(\d+(?:\.\d+)?)\s*mm/i) || 
+        // Measured Wall Thickness regex (e.g. 2.00 mm, 3.10 mm, 6.50 mm)
+        const measuredMatch = text.match(/(?:Measured\s+(?:Wall\s+)?Thickness|Measured|Thickness|t_measured):?\s*(\d+(?:\.\d+)?)\s*mm/i) || 
                               text.match(/(\d+(?:\.\d+)?)\s*mm/i);
-        const measuredNumeric = measuredMatch ? parseFloat(measuredMatch[1]) : 3.10;
+        let measuredNumeric = 3.10;
+        if (measuredMatch) {
+            measuredNumeric = parseFloat(measuredMatch[1]);
+        } else {
+            const numMatch = text.match(/\b(\d+\.\d+)\b/);
+            if (numMatch) measuredNumeric = parseFloat(numMatch[1]);
+        }
         const measuredValue = `${measuredNumeric.toFixed(2)} mm`;
 
-        // Allowable Limit regex (e.g., "Allowable Minimum Limit (T-min): 4.50 mm" or "T-min: 4.50 mm")
-        const allowableMatch = text.match(/Allowable\s+(?:Minimum\s+)?(?:Limit\s+)?(?:\(T-min\))?:?\s*(\d+(?:\.\d+)?)\s*mm/i) ||
-                               text.match(/T-min:?\s*(\d+(?:\.\d+)?)\s*mm/i);
-        const allowableNumeric = allowableMatch ? parseFloat(allowableMatch[1]) : 4.50;
+        // Allowable Limit regex (T-min)
+        const allowableMatch = text.match(/(?:Allowable\s+(?:Minimum\s+)?(?:Limit\s+)?(?:\(T-min\))?|T-min|Tmin|Allowable):?\s*(\d+(?:\.\d+)?)\s*mm/i);
+        let allowableNumeric = 4.50;
+        if (allowableMatch) {
+            allowableNumeric = parseFloat(allowableMatch[1]);
+        }
         const allowableLimit = `${allowableNumeric.toFixed(2)} mm (T-min)`;
 
         // Defect Description
         let defectDescription = "Ultrasonic wall thickness measurement conducted.";
         for (const l of lines) {
-            if (l.toLowerCase().includes("corrosion") || l.toLowerCase().includes("pitting") || l.toLowerCase().includes("defect") || l.toLowerCase().includes("thinning") || l.toLowerCase().includes("vibration") || l.toLowerCase().includes("acceptable")) {
+            if (l.toLowerCase().includes("corrosion") || l.toLowerCase().includes("pitting") || l.toLowerCase().includes("defect") || l.toLowerCase().includes("thinning") || l.toLowerCase().includes("vibration") || l.toLowerCase().includes("acceptable") || l.toLowerCase().includes("margin")) {
                 defectDescription = l.trim();
                 break;
             }
@@ -136,11 +168,11 @@ export class IndustrialDocumentParser {
         if (measuredNumeric < allowableNumeric) {
             const deficit = allowableNumeric - measuredNumeric;
             severity = "CRITICAL";
-            recommendedAction = `CRITICAL HAZARD: Wall thickness is ${deficit.toFixed(2)} mm below minimum allowable limit (T-min). Perform immediate unit isolation and execute shell weld overlay replacement per MRPL SOP-MNT-2024-04 Section 4.2.`;
+            recommendedAction = `CRITICAL HAZARD: Wall thickness is ${deficit.toFixed(2)} mm below minimum allowable limit (T-min). Perform immediate unit isolation and execute shell weld overlay replacement per MRPL SOP Section 4.2.`;
         } else {
             const margin = measuredNumeric - allowableNumeric;
             severity = "LOW";
-            recommendedAction = `SAFE OPERATING MARGIN: Wall thickness is ${margin.toFixed(2)} mm above minimum allowable limit (T-min). Continue routine scheduled maintenance per MRPL SOP-MNT-2024-04.`;
+            recommendedAction = `SAFE OPERATING MARGIN: Wall thickness is ${margin.toFixed(2)} mm above minimum allowable limit (T-min). Continue routine scheduled maintenance per MRPL SOP.`;
         }
 
         findings.push({
@@ -154,7 +186,7 @@ export class IndustrialDocumentParser {
             allowableNumeric,
             severity,
             recommendedAction,
-            sopReference: "MRPL-SOP-MNT-2024-04 Sec 4.2",
+            sopReference: "MRPL-SOP-MNT Sec 4.2",
             pageNumber: 1,
             sourceFile: fileName,
             confidence: 0.95

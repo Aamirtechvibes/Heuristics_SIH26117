@@ -148,6 +148,8 @@ const App = () => {
     }
   }
 
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null)
+
   const handleFileUpload = async (file: File, category: 'report' | 'sop') => {
     if (category === 'report') setUploadingReport(true)
     if (category === 'sop') setUploadingSop(true)
@@ -156,6 +158,7 @@ const App = () => {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('category', category)
+      if (currentRunId) formData.append('runId', currentRunId)
 
       const res = await fetch(`${API_BASE}/api/upload`, {
         method: 'POST',
@@ -164,6 +167,7 @@ const App = () => {
 
       if (!res.ok) throw new Error('Upload failed')
       const data = await res.json()
+      if (data.runId) setCurrentRunId(data.runId)
 
       if (category === 'report') {
         setUploadedReportPath(data.filePath)
@@ -171,7 +175,7 @@ const App = () => {
         setExecutionMode('LIVE_UPLOAD')
       } else {
         setUploadedSopName(data.fileName)
-        setSopDirectory(`demo-data + ${data.fileName}`)
+        setSopDirectory(`Uploaded SOP: ${data.fileName}`)
       }
     } catch (err: any) {
       setApiError(`Upload failed: ${err.message}`)
@@ -189,6 +193,7 @@ const App = () => {
     setEvidenceList([])
     setCalculationResult('')
     setRoutingDetails([])
+    setDeliverables({})
 
     // Refresh health status before run
     await fetchOllamaHealth()
@@ -206,7 +211,7 @@ const App = () => {
 
     try {
       // Step 1: Understand
-      updateStep(1, 'running', `Inspecting task prompt & document (${executionMode === 'LIVE_UPLOAD' ? uploadedReportName : documentFile})...`)
+      updateStep(1, 'running', `Inspecting task prompt & document (${executionMode === 'LIVE_UPLOAD' ? (uploadedReportName || 'uploaded document') : documentFile})...`)
       await new Promise(r => setTimeout(r, 400))
 
       // Call live backend API
@@ -214,8 +219,10 @@ const App = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          runId: currentRunId || undefined,
           taskPrompt: taskInput,
           reportFile: activeReport,
+          sopFiles: uploadedSopName ? [uploadedSopName] : [],
           isLiveUpload: executionMode === 'LIVE_UPLOAD'
         })
       })
@@ -224,6 +231,7 @@ const App = () => {
 
       const result = await res.json()
       const state = result.state
+      if (result.runId) setCurrentRunId(result.runId)
 
       if (result.healthStatus) {
         setHealthStatus(result.healthStatus)
@@ -687,19 +695,19 @@ const App = () => {
             {runCompleted ? (
               <div className="space-y-2">
                 <a
-                  href={`${API_BASE}/output_deliverables/${documentFile === 'inspection-report-B.txt' ? 'MRPL_Inspection_Certificate.docx' : 'MRPL_Confidential_Approval_Note.docx'}`}
+                  href={deliverables.docx ? (deliverables.docx.startsWith('http') ? deliverables.docx : `${API_BASE}${deliverables.docx}`) : '#'}
                   download
                   className="flex items-center justify-between p-2.5 rounded bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 text-xs text-blue-200 transition"
                 >
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-blue-400" />
-                    <span>{documentFile === 'inspection-report-B.txt' ? 'DOCX Inspection Certificate' : 'DOCX Approval Note'}</span>
+                    <span>DOCX Approval Note / Certificate</span>
                   </div>
                   <Download className="w-3.5 h-3.5 text-blue-400" />
                 </a>
 
                 <a
-                  href={`${API_BASE}/output_deliverables/MRPL_Inspection_Findings_Analysis.xlsx`}
+                  href={deliverables.xlsx ? (deliverables.xlsx.startsWith('http') ? deliverables.xlsx : `${API_BASE}${deliverables.xlsx}`) : '#'}
                   download
                   className="flex items-center justify-between p-2.5 rounded bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 text-xs text-emerald-200 transition"
                 >
@@ -711,7 +719,7 @@ const App = () => {
                 </a>
 
                 <a
-                  href={`${API_BASE}/output_deliverables/MRPL_Management_Inspection_Summary.pptx`}
+                  href={deliverables.pptx ? (deliverables.pptx.startsWith('http') ? deliverables.pptx : `${API_BASE}${deliverables.pptx}`) : '#'}
                   download
                   className="flex items-center justify-between p-2.5 rounded bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/30 text-xs text-purple-200 transition"
                 >

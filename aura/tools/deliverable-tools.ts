@@ -17,6 +17,8 @@ export interface DeliverablesInput {
     verificationStatus: "SUPPORTED" | "UNCERTAIN";
     isHazard: boolean;
     outputDirectory: string;
+    runId?: string;
+    sourceFile?: string;
 }
 
 export class DeliverableTools {
@@ -68,9 +70,11 @@ export class DeliverableTools {
                         new Paragraph({
                             children: [
                                 new TextRun({ text: "DOCUMENT REF: ", bold: true }),
-                                new TextRun({ text: `MRPL/ENG-APPROVAL/${Date.now().toString().slice(-6)}\n` }),
+                                new TextRun({ text: `AURA/${input.runId || Date.now().toString().slice(-6)}\n` }),
                                 new TextRun({ text: "DATE: ", bold: true }),
                                 new TextRun({ text: `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}\n` }),
+                                new TextRun({ text: "SOURCE FILE: ", bold: true }),
+                                new TextRun({ text: `${input.sourceFile || "Uploaded Document"}\n` }),
                                 new TextRun({ text: "TARGET EQUIPMENT: ", bold: true }),
                                 new TextRun({ text: `${input.equipmentId}\n` }),
                                 new TextRun({ text: "CLASSIFICATION: ", bold: true }),

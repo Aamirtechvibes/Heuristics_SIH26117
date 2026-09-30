@@ -144,7 +144,7 @@ export class OllamaLocalProvider implements LocalModelProvider {
             }
         }
 
-        const fallback = `[Reasoning Engine Analyzed Findings: Wall deficit detected. Recommending isolation & SOP-MNT-2024-04 weld overlay repair.]`;
+        const fallback = `[Reasoning Engine Analyzed Prompt: ${prompt.slice(0, 80)}...]`;
         console.log(chalk.bold.yellow("  🧠 REASONING RESULT [STATUS: LOCAL FALLBACK]"));
         console.log(chalk.dim(`     ↳ ${fallback}`));
         return fallback;
@@ -154,7 +154,7 @@ export class OllamaLocalProvider implements LocalModelProvider {
         modelName: string, 
         prompt: string, 
         imageBase64: string, 
-        sourceFile: string = "inspection-report-scanned.pdf", 
+        sourceFile: string = "inspection-report.pdf", 
         pageNum: number = 1,
         imageWidth: number = 850,
         imageHeight: number = 1100
@@ -216,7 +216,7 @@ export class OllamaLocalProvider implements LocalModelProvider {
             }
         }
 
-        const fallback = `[Local Multimodal Vision OCR Extracted Data from ${sourceFile} (Page ${pageNum}, ${actualByteSize} bytes): Equipment EX-402A Measured 3.10mm vs T-min 4.50mm]`;
+        const fallback = `[Local Multimodal Vision OCR Ingestion of ${sourceFile} (Page ${pageNum}, ${actualByteSize} bytes payload processed).]`;
         console.log(chalk.bold.yellow("  👁️ VISION RESPONSE [STATUS: LOCAL FALLBACK]"));
         console.log(chalk.dim(`     ↳ ${fallback}`));
         return fallback;

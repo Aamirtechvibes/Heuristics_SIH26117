@@ -25,6 +25,31 @@ export class LocalKnowledgeRetriever {
         this.parser = new IndustrialDocumentParser();
     }
 
+    public reset(): void {
+        this.indexedSections = [];
+    }
+
+    public async indexKnowledgeFiles(filePaths: string[]): Promise<number> {
+        let count = 0;
+        for (const filePath of filePaths) {
+            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                const fileName = path.basename(filePath).toLowerCase();
+                // Strictly exclude inspection reports and deliverable files from SOP knowledge index
+                if (fileName.includes("inspection-report") || fileName.includes("report-a") || fileName.includes("report-b")) {
+                    continue;
+                }
+                try {
+                    const doc = await this.parser.parse(filePath);
+                    this.indexDocumentText(doc.fileName, doc.filePath, doc.fullText);
+                    count++;
+                } catch (e) {
+                    // Ignore unparseable files
+                }
+            }
+        }
+        return count;
+    }
+
     public async indexDirectory(dirPath: string): Promise<number> {
         if (!fs.existsSync(dirPath)) return 0;
         const files = fs.readdirSync(dirPath);
@@ -33,7 +58,14 @@ export class LocalKnowledgeRetriever {
         for (const file of files) {
             const fullPath = path.join(dirPath, file);
             const stat = fs.statSync(fullPath);
-            if (stat.isFile() && (file.endsWith(".txt") || file.endsWith(".md") || file.endsWith(".pdf") || file.endsWith(".json"))) {
+            const lowerFile = file.toLowerCase();
+
+            // Strictly filter out inspection reports, generated deliverables, and non-SOP files
+            if (lowerFile.includes("inspection-report") || lowerFile.includes("report-a") || lowerFile.includes("report-b") || lowerFile.endsWith(".docx") || lowerFile.endsWith(".xlsx") || lowerFile.endsWith(".pptx")) {
+                continue;
+            }
+
+            if (stat.isFile() && (lowerFile.endsWith(".txt") || lowerFile.endsWith(".md") || lowerFile.endsWith(".pdf") || lowerFile.endsWith(".json"))) {
                 try {
                     const doc = await this.parser.parse(fullPath);
                     this.indexDocumentText(doc.fileName, doc.filePath, doc.fullText);
@@ -91,7 +123,7 @@ export class LocalKnowledgeRetriever {
         const results: EvidenceSnippet[] = [];
 
         for (const sec of this.indexedSections) {
-            const lower = sec.content.toLowerCase();
+            const lower = `${sec.sectionTitle} ${sec.content}`.toLowerCase();
             let score = 0;
             for (const t of terms) {
                 if (lower.includes(t)) score += 1;
