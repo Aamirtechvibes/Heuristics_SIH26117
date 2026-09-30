@@ -20,9 +20,16 @@ export async function runAuraJudgeDemo(customReportPath?: string) {
     console.log(chalk.bgGreen.black.bold(" [SOVEREIGNTY GUARD] ") + chalk.green(" Sovereign Mode: ACTIVE | Socket-Level Interceptor: ON | External AI APIs: BLOCKED "));
 
     const router = new ModelRegistryRouter();
-    const isOllamaRunning = await router.getProvider().isAvailable();
-    console.log(chalk.bold.blue(` [OLLAMA LOCAL DAEMON STATUS] `) + (isOllamaRunning ? chalk.green.bold("ONLINE (Local Port 11434)") : chalk.yellow.bold("OFFLINE_FALLBACK (Using Local Open-Weight Engine)")));
+    const health = await router.getProvider().getHealthStatus();
 
+    console.log(chalk.bold.blue("\n  ================================================================================"));
+    console.log(chalk.bold.blue("   🛡️  AURA — OLLAMA & LOCAL MODEL HEALTH CHECK"));
+    console.log(chalk.bold.blue("  ================================================================================"));
+    console.log(`   OLLAMA DAEMON    : ` + (health.ollamaOnline ? chalk.green.bold(`✓ ONLINE (${health.endpoint})`) : chalk.red.bold("✗ OFFLINE")));
+    console.log(`   VISION MODEL     : ` + (health.visionModelInstalled ? chalk.green.bold(`✓ INSTALLED (${health.visionModelName})`) : chalk.yellow.bold(`✗ MISSING -> Run: ollama pull ${health.visionModelName}`)));
+    console.log(`   REASONING MODEL  : ` + (health.reasoningModelInstalled ? chalk.green.bold(`✓ INSTALLED (${health.reasoningModelName})`) : chalk.yellow.bold(`✗ MISSING -> Run: ollama pull ${health.reasoningModelName}`)));
+    console.log(`   INFERENCE MODE   : ` + (health.inferenceMode === "LIVE LOCAL INFERENCE" ? chalk.bgGreen.black.bold(" LIVE LOCAL INFERENCE ") : chalk.bgYellow.black.bold(" LOCAL FALLBACK ")));
+    console.log(chalk.bold.blue("  ================================================================================\n"));
 
     const graph = new AuraAgentGraph();
     const parser = new IndustrialDocumentParser();
@@ -71,13 +78,19 @@ export async function runAuraJudgeDemo(customReportPath?: string) {
     const parsedDoc = await parser.parse(documentPath);
     state.parsedDocument = parsedDoc;
 
-    // Trigger vision request telemetry log
+    // Read actual document file buffer for true raw payload calculation
+    const fileBuffer = (await import("node:fs")).readFileSync(documentPath);
+    const docBase64 = fileBuffer.toString("base64");
+
+    // Trigger vision request telemetry log with actual payload size
     await router.getProvider().generateVision(
         visionRoute.selectedModel.id,
         "Extract equipment ID and wall thickness measurements from page 1.",
-        Buffer.from(parsedDoc.fullText).toString("base64").slice(0, 500),
+        docBase64,
         parsedDoc.fileName,
-        1
+        1,
+        850,
+        1100
     );
 
     const targetFinding = parsedDoc.findings[0];

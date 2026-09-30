@@ -54,7 +54,7 @@ export interface RouteSelectionResult {
     reason: string;
     fallbackModel: ModelRegistration;
     isLocal: true;
-    status: "LOCAL / AVAILABLE" | "LOCAL / OFFLINE_FALLBACK";
+    status: "LIVE LOCAL INFERENCE" | "LOCAL FALLBACK (MODEL NOT INSTALLED)" | "LOCAL FALLBACK (OLLAMA OFFLINE)";
     timestamp: string;
 }
 
@@ -103,7 +103,13 @@ export class ModelRegistryRouter {
         const selectedModel = LOCAL_MODEL_REGISTRY[selectedKey] || LOCAL_MODEL_REGISTRY["reasoning"];
         const fallbackModel = LOCAL_MODEL_REGISTRY[fallbackKey] || LOCAL_MODEL_REGISTRY["coding"];
 
+        const health = await this.provider.getHealthStatus();
         const isModelAvailable = await this.provider.isAvailable(selectedModel.id);
+
+        let status: RouteSelectionResult["status"] = "LOCAL FALLBACK (OLLAMA OFFLINE)";
+        if (health.ollamaOnline) {
+            status = isModelAvailable ? "LIVE LOCAL INFERENCE" : "LOCAL FALLBACK (MODEL NOT INSTALLED)";
+        }
 
         return {
             taskType,
@@ -111,7 +117,7 @@ export class ModelRegistryRouter {
             reason: `${reason} [Sovereignty Guard: 100% LOCAL INFERENCE ENFORCED]`,
             fallbackModel,
             isLocal: true,
-            status: isModelAvailable ? "LOCAL / AVAILABLE" : "LOCAL / OFFLINE_FALLBACK",
+            status,
             timestamp: new Date().toISOString()
         };
     }

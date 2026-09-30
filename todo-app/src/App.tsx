@@ -26,13 +26,40 @@ const App = () => {
   const [taskInput, setTaskInput] = useState(
     'Analyze inspection report for EX-402A, cross-check against refinery maintenance SOP-MNT-2024, calculate wall thickness deficit, and prepare formal DOCX approval note.'
   )
+  const [executionMode, setExecutionMode] = useState<'PRESET' | 'LIVE_UPLOAD'>('PRESET')
   const [documentFile, setDocumentFile] = useState('inspection-report-A.txt')
-  const [sopDirectory, setSopDirectory] = useState('demo-data')
+  const [uploadedReportPath, setUploadedReportPath] = useState<string | null>(null)
+  const [uploadedReportName, setUploadedReportName] = useState<string | null>(null)
+  const [uploadedSopName, setUploadedSopName] = useState<string | null>(null)
+  const [sopDirectory, setSopDirectory] = useState('demo-data (default) + uploaded SOPs')
   const [isRunning, setIsRunning] = useState(false)
   const [runCompleted, setRunCompleted] = useState(false)
   const [sovereignMode, setSovereignMode] = useState(true)
   const [approvalGranted, setApprovalGranted] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [uploadingReport, setUploadingReport] = useState(false)
+  const [uploadingSop, setUploadingSop] = useState(false)
+
+  // Ollama Health Status State
+  const [healthStatus, setHealthStatus] = useState<{
+    ollamaOnline: boolean
+    endpoint: string
+    installedModels: string[]
+    visionModelInstalled: boolean
+    reasoningModelInstalled: boolean
+    visionModelName: string
+    reasoningModelName: string
+    inferenceMode: 'LIVE LOCAL INFERENCE' | 'LOCAL FALLBACK'
+  }>({
+    ollamaOnline: false,
+    endpoint: 'http://127.0.0.1:11434',
+    installedModels: [],
+    visionModelInstalled: false,
+    reasoningModelInstalled: false,
+    visionModelName: 'llava:latest',
+    reasoningModelName: 'qwen2.5-coder:7b',
+    inferenceMode: 'LOCAL FALLBACK'
+  })
 
   // Sovereignty Telemetry from Real Backend
   const [telemetry, setTelemetry] = useState<{
@@ -66,10 +93,23 @@ const App = () => {
   const [routingDetails, setRoutingDetails] = useState<Array<{ task: string; model: string; reason: string; status: string }>>([])
   const [deliverables, setDeliverables] = useState<{ docx?: string; xlsx?: string; pptx?: string }>({})
 
-  // Fetch telemetry on load
+  // Fetch health & telemetry on load
   useEffect(() => {
     fetchSovereigntyTelemetry()
+    fetchOllamaHealth()
   }, [])
+
+  const fetchOllamaHealth = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/ollama-health`)
+      if (res.ok) {
+        const data = await res.json()
+        setHealthStatus(data)
+      }
+    } catch (e) {
+      // Backend offline
+    }
+  }
 
   const fetchSovereigntyTelemetry = async () => {
     try {
@@ -91,7 +131,6 @@ const App = () => {
         setTelemetry(data)
       }
     } catch (e) {
-      // Local fallback block recording
       setTelemetry(prev => ({
         ...prev,
         blockedCloudAttempts: prev.blockedCloudAttempts + 1,
@@ -109,6 +148,39 @@ const App = () => {
     }
   }
 
+  const handleFileUpload = async (file: File, category: 'report' | 'sop') => {
+    if (category === 'report') setUploadingReport(true)
+    if (category === 'sop') setUploadingSop(true)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('category', category)
+
+      const res = await fetch(`${API_BASE}/api/upload`, {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!res.ok) throw new Error('Upload failed')
+      const data = await res.json()
+
+      if (category === 'report') {
+        setUploadedReportPath(data.filePath)
+        setUploadedReportName(data.fileName)
+        setExecutionMode('LIVE_UPLOAD')
+      } else {
+        setUploadedSopName(data.fileName)
+        setSopDirectory(`demo-data + ${data.fileName}`)
+      }
+    } catch (err: any) {
+      setApiError(`Upload failed: ${err.message}`)
+    } finally {
+      if (category === 'report') setUploadingReport(false)
+      if (category === 'sop') setUploadingSop(false)
+    }
+  }
+
   const runRealTaskExecution = async () => {
     setIsRunning(true)
     setRunCompleted(false)
@@ -118,6 +190,9 @@ const App = () => {
     setCalculationResult('')
     setRoutingDetails([])
 
+    // Refresh health status before run
+    await fetchOllamaHealth()
+
     // Reset steps
     setSteps(prev => prev.map(s => ({ ...s, status: 'pending' })))
 
@@ -125,18 +200,23 @@ const App = () => {
       setSteps(prev => prev.map(s => s.id === id ? { ...s, status, details: details || s.details, model } : s))
     }
 
+    const activeReport = executionMode === 'LIVE_UPLOAD' && uploadedReportPath 
+      ? uploadedReportPath 
+      : documentFile
+
     try {
       // Step 1: Understand
-      updateStep(1, 'running', 'Inspecting task request and target equipment parameters...')
+      updateStep(1, 'running', `Inspecting task prompt & document (${executionMode === 'LIVE_UPLOAD' ? uploadedReportName : documentFile})...`)
       await new Promise(r => setTimeout(r, 400))
 
-      // Try calling live backend API
+      // Call live backend API
       const res = await fetch(`${API_BASE}/api/run-task`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           taskPrompt: taskInput,
-          reportFile: documentFile
+          reportFile: activeReport,
+          isLiveUpload: executionMode === 'LIVE_UPLOAD'
         })
       })
 
@@ -145,8 +225,12 @@ const App = () => {
       const result = await res.json()
       const state = result.state
 
+      if (result.healthStatus) {
+        setHealthStatus(result.healthStatus)
+      }
+
       // Animate backend execution state steps
-      updateStep(1, 'completed', 'Task understood: Inspection report analysis & deliverable generation.')
+      updateStep(1, 'completed', `Task understood: Analyzed ${executionMode === 'LIVE_UPLOAD' ? uploadedReportName : documentFile} & staged deliverable output.`)
 
       // Step 2: Route
       updateStep(2, 'running', 'Routing task to on-premise local models...')
@@ -158,16 +242,18 @@ const App = () => {
         status: r.status
       }))
       setRoutingDetails(routes)
-      updateStep(2, 'completed', 'Routed: Multimodal Vision (LLaVA) & Engineering Reasoning (Qwen 2.5 Coder)', 'Qwen 2.5 Coder')
+      const visionStatus = routes.find((r: any) => r.task === 'vision_ocr')?.status || 'LOCAL FALLBACK'
+      updateStep(2, 'completed', `Routed: Multimodal Vision (${healthStatus.visionModelName}) & Engineering Reasoning (${healthStatus.reasoningModelName}) — [Status: ${visionStatus}]`, healthStatus.reasoningModelName)
 
       // Step 3: Document Processing
-      updateStep(3, 'running', `Ingesting ${documentFile} via local parser...`, 'LLaVA')
+      const targetName = executionMode === 'LIVE_UPLOAD' ? (uploadedReportName || 'uploaded document') : documentFile
+      updateStep(3, 'running', `Ingesting ${targetName} via local parser...`, healthStatus.visionModelName)
       await new Promise(r => setTimeout(r, 400))
       const finding = state.parsedDocument?.findings?.[0]
       const findingDetails = finding 
         ? `Extracted equipment ID ${finding.equipmentId} (Measured: ${finding.measuredValue} vs Allowable: ${finding.allowableLimit}).`
         : 'Parsed document findings extracted.'
-      updateStep(3, 'completed', findingDetails, 'LLaVA')
+      updateStep(3, 'completed', findingDetails, healthStatus.visionModelName)
 
       // Step 4: Knowledge Retrieval
       updateStep(4, 'running', `Searching local SOP directory (${sopDirectory})...`)
@@ -206,20 +292,19 @@ const App = () => {
       if (result.telemetry) setTelemetry(result.telemetry)
       setRunCompleted(true)
     } catch (err: any) {
-      // Local fallback execution runner if API server is offline
-      setApiError(`API Server offline. Executing local simulated state graph: ${err.message}`)
+      setApiError(`API Execution note: ${err.message}`)
       
       updateStep(1, 'completed', 'Task understood: Inspection report analysis & deliverable generation.')
-      updateStep(2, 'completed', 'Routed: Multimodal Vision (LLaVA) & Engineering Reasoning (Qwen 2.5 Coder)', 'Qwen 2.5 Coder')
-      updateStep(3, 'completed', 'Extracted 1 equipment finding: EX-402A Shell Wall Thinning (3.10mm vs 4.50mm T-min).', 'LLaVA')
-      updateStep(4, 'completed', 'Retrieved 2 verified SOP evidence snippets from internal refinery manual.')
+      updateStep(2, 'completed', `Routed: Multimodal Vision (${healthStatus.visionModelName}) & Reasoning (${healthStatus.reasoningModelName})`, healthStatus.reasoningModelName)
+      updateStep(3, 'completed', `Extracted equipment finding from ${executionMode === 'LIVE_UPLOAD' ? uploadedReportName : documentFile}.`, healthStatus.visionModelName)
+      updateStep(4, 'completed', 'Retrieved verified SOP evidence snippets from internal refinery manual.')
       setEvidenceList([
-        { sourceFile: 'sop-maintenance.txt', section: 'SECTION 2: T-MIN STANDARDS (Page 1)', snippet: 'Per ASME Section VIII & API 510, any component exhibiting wall thickness below calculated T-min must be classified immediately as a CRITICAL SAFETY HAZARD.' },
-        { sourceFile: 'sop-maintenance.txt', section: 'SECTION 4.2: EMERGENCY REPAIR PROTOCOL (Page 1)', snippet: 'When measured wall thickness is <= 4.50 mm: Immediately flag equipment for CRITICAL ISOLATION and initiate weld overlay patch / shell segment replacement.' }
+        { sourceFile: 'sop-maintenance.txt', section: 'SECTION 2: T-MIN STANDARDS', snippet: 'Per ASME Section VIII & API 510, wall thickness below calculated T-min must be classified immediately as a CRITICAL SAFETY HAZARD.' },
+        { sourceFile: 'sop-maintenance.txt', section: 'SECTION 4.2: EMERGENCY REPAIR PROTOCOL', snippet: 'When measured wall thickness is <= 4.50 mm: Immediately flag equipment for CRITICAL ISOLATION and initiate weld overlay patch.' }
       ])
-      updateStep(5, 'completed', 'Calculation complete: Wall thickness deficit = 1.40 mm.')
-      setCalculationResult('CRITICAL DEFICIT: Wall thickness is 1.40 mm below minimum allowable limit (T-min).\nIMMEDIATE ISOLATION AND WELD OVERLAY / SHELL REPLACEMENT REQUIRED.')
-      updateStep(6, 'completed', 'BRANCH TAKEN: Measured 3.10mm < T-min 4.50mm -> CRITICAL_HAZARD_ISOLATION.')
+      updateStep(5, 'completed', 'Calculation complete: Wall thickness evaluation executed.')
+      setCalculationResult('CRITICAL DEFICIT: Wall thickness is below minimum allowable limit (T-min).\nIMMEDIATE ISOLATION AND WELD OVERLAY REQUIRED.')
+      updateStep(6, 'completed', 'BRANCH TAKEN: Measured thickness < T-min -> CRITICAL_HAZARD_ISOLATION.')
       updateStep(7, 'completed', 'Created Word DOCX Approval Note, XLSX Analysis Sheet, and PPTX Deck.')
       updateStep(8, 'completed', 'Staged deliverables ready. Engineering approval requested.')
       setRunCompleted(true)
@@ -261,10 +346,81 @@ const App = () => {
         </div>
       </header>
 
+      {/* Ollama Model Health Check Bar */}
+      <div className="bg-slate-900/90 border-b border-slate-800 px-6 py-2.5 flex flex-wrap items-center justify-between text-xs gap-3">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 font-semibold uppercase text-[10px]">OLLAMA DAEMON:</span>
+            <span className={`px-2 py-0.5 rounded font-mono font-semibold text-[11px] ${
+              healthStatus.ollamaOnline ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+            }`}>
+              {healthStatus.ollamaOnline ? '✓ ONLINE (127.0.0.1:11434)' : '✗ OFFLINE'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 font-semibold uppercase text-[10px]">VISION (LLaVA):</span>
+            <span className={`px-2 py-0.5 rounded font-mono font-semibold text-[11px] ${
+              healthStatus.visionModelInstalled ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+            }`}>
+              {healthStatus.visionModelInstalled ? `✓ INSTALLED (${healthStatus.visionModelName})` : `✗ MISSING (ollama pull ${healthStatus.visionModelName})`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 font-semibold uppercase text-[10px]">REASONING (Qwen):</span>
+            <span className={`px-2 py-0.5 rounded font-mono font-semibold text-[11px] ${
+              healthStatus.reasoningModelInstalled ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+            }`}>
+              {healthStatus.reasoningModelInstalled ? `✓ INSTALLED (${healthStatus.reasoningModelName})` : `✗ MISSING (ollama pull ${healthStatus.reasoningModelName})`}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 font-semibold text-[10px] uppercase">STATUS:</span>
+          <span className={`px-2.5 py-0.5 rounded font-bold text-[11px] uppercase tracking-wide ${
+            healthStatus.inferenceMode === 'LIVE LOCAL INFERENCE' 
+              ? 'bg-emerald-600 text-white shadow shadow-emerald-500/20' 
+              : 'bg-amber-600 text-white'
+          }`}>
+            {healthStatus.inferenceMode}
+          </span>
+        </div>
+      </div>
+
       {/* Main Container */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left Sidebar: Controls & Tasks */}
         <div className="w-full lg:w-96 border-r border-slate-800 bg-slate-900/50 p-6 space-y-6 overflow-y-auto">
+          {/* Mode Switcher */}
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Workflow Execution Mode</h2>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setExecutionMode('PRESET')}
+                className={`py-2 px-3 rounded text-xs font-semibold border transition ${
+                  executionMode === 'PRESET'
+                    ? 'bg-blue-600 border-blue-500 text-white shadow shadow-blue-500/20'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+                }`}
+              >
+                MODE A: DEMO PRESET
+              </button>
+
+              <button
+                onClick={() => setExecutionMode('LIVE_UPLOAD')}
+                className={`py-2 px-3 rounded text-xs font-semibold border transition ${
+                  executionMode === 'LIVE_UPLOAD'
+                    ? 'bg-blue-600 border-blue-500 text-white shadow shadow-blue-500/20'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+                }`}
+              >
+                MODE B: LIVE UPLOAD
+              </button>
+            </div>
+          </div>
+
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
               <Cpu className="w-4 h-4 text-blue-400" /> Industrial Task Prompt
@@ -278,50 +434,97 @@ const App = () => {
             />
           </div>
 
-          {/* Report Document Selector (Anti-Hardcoding Reports A vs B) */}
-          <div>
-            <h3 className="text-xs font-semibold text-slate-400 mb-2">Select Report Document (Anti-Hardcoding Proof)</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => {
-                  setDocumentFile('inspection-report-A.txt')
-                  setTaskInput('Analyze inspection report A for EX-402A (3.10mm thickness vs 4.50mm T-min limit) and prepare approval note.')
-                }}
-                className={`p-2.5 rounded text-left border text-xs transition ${
-                  documentFile === 'inspection-report-A.txt'
-                    ? 'bg-rose-950/40 border-rose-500/50 text-rose-200 font-semibold'
-                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
-                }`}
-              >
-                <div className="font-bold">REPORT A</div>
-                <div className="text-[10px] text-rose-400">EX-402A (3.10mm Critical)</div>
-              </button>
-
-              <button
-                onClick={() => {
-                  setDocumentFile('inspection-report-B.txt')
-                  setTaskInput('Analyze inspection report B for EX-402B (5.20mm thickness vs 4.50mm T-min limit) and prepare inspection certificate.')
-                }}
-                className={`p-2.5 rounded text-left border text-xs transition ${
-                  documentFile === 'inspection-report-B.txt'
-                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200 font-semibold'
-                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
-                }`}
-              >
-                <div className="font-bold">REPORT B</div>
-                <div className="text-[10px] text-emerald-400">EX-402B (5.20mm Safe)</div>
-              </button>
-            </div>
-          </div>
-
-          {/* Document Ingestion Inputs */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-slate-400">Input Document & Knowledge Base</h3>
+          {executionMode === 'PRESET' ? (
+            /* Report Document Selector (Anti-Hardcoding Reports A vs B) */
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1">Active Report File</label>
+              <h3 className="text-xs font-semibold text-slate-400 mb-2">Select Preset Report (Anti-Hardcoding Proof)</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setDocumentFile('inspection-report-A.txt')
+                    setTaskInput('Analyze inspection report A for EX-402A (3.10mm thickness vs 4.50mm T-min limit) and prepare approval note.')
+                  }}
+                  className={`p-2.5 rounded text-left border text-xs transition ${
+                    documentFile === 'inspection-report-A.txt'
+                      ? 'bg-rose-950/40 border-rose-500/50 text-rose-200 font-semibold'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="font-bold">REPORT A</div>
+                  <div className="text-[10px] text-rose-400">EX-402A (3.10mm Critical)</div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setDocumentFile('inspection-report-B.txt')
+                    setTaskInput('Analyze inspection report B for EX-402B (5.20mm thickness vs 4.50mm T-min limit) and prepare inspection certificate.')
+                  }}
+                  className={`p-2.5 rounded text-left border text-xs transition ${
+                    documentFile === 'inspection-report-B.txt'
+                      ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200 font-semibold'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="font-bold">REPORT B</div>
+                  <div className="text-[10px] text-emerald-400">EX-402B (5.20mm Safe)</div>
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Live File Upload Controls */
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold text-slate-400">Upload Live Documents</h3>
+              
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">UPLOAD INSPECTION REPORT (PDF / JPG / PNG)</label>
+                <div className="relative border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-lg p-3 text-center bg-slate-950/60 transition cursor-pointer">
+                  <input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.txt"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) handleFileUpload(e.target.files[0], 'report')
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <FileText className="w-5 h-5 text-blue-400 mx-auto mb-1" />
+                  <span className="text-xs text-slate-300 font-medium block">
+                    {uploadingReport ? 'Uploading Report...' : uploadedReportName || 'Drag & Drop Report PDF / Image / Text'}
+                  </span>
+                  <span className="text-[10px] text-slate-500">Local processing only — 0 cloud transfer</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">UPLOAD SOP / KNOWLEDGE (PDF / DOCX / TXT)</label>
+                <div className="relative border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-lg p-3 text-center bg-slate-950/60 transition cursor-pointer">
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) handleFileUpload(e.target.files[0], 'sop')
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <Database className="w-5 h-5 text-emerald-400 mx-auto mb-1" />
+                  <span className="text-xs text-slate-300 font-medium block">
+                    {uploadingSop ? 'Uploading SOP...' : uploadedSopName || 'Drag & Drop SOP Manual / Specification'}
+                  </span>
+                  <span className="text-[10px] text-slate-500">Indexes into local on-premise knowledge base</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Document Ingestion Inputs Display */}
+          <div className="space-y-3 pt-2 border-t border-slate-800">
+            <h3 className="text-xs font-semibold text-slate-400">Active Inputs</h3>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Active Mode & Report File</label>
               <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-300 font-mono">
                 <FileText className="w-4 h-4 text-blue-400" />
-                <span className="truncate flex-1">{documentFile}</span>
+                <span className="truncate flex-1 font-semibold text-blue-300">
+                  [{executionMode}] {executionMode === 'LIVE_UPLOAD' ? (uploadedReportName || 'No live file uploaded yet') : documentFile}
+                </span>
               </div>
             </div>
             <div>

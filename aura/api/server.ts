@@ -23,6 +23,11 @@ export function startAuraApiServer() {
     const verifier = new VerifierTool();
     const deliverableGen = new DeliverableTools();
 
+    const uploadsDir = path.join(process.cwd(), "demo-data", "uploads");
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
     console.log(`\n🛡️ [AURA API SERVER] Starting Sovereign AI Workbench API on http://localhost:${PORT}...`);
 
     Bun.serve({
@@ -68,6 +73,12 @@ export function startAuraApiServer() {
                 }
             }
 
+            // GET /api/ollama-health
+            if (url.pathname === "/api/ollama-health" && req.method === "GET") {
+                const health = await router.getProvider().getHealthStatus();
+                return new Response(JSON.stringify(health), { headers });
+            }
+
             // GET /api/sovereignty
             if (url.pathname === "/api/sovereignty" && req.method === "GET") {
                 return new Response(JSON.stringify(guard.getLedgerSummary()), { headers });
@@ -83,18 +94,55 @@ export function startAuraApiServer() {
                 return new Response(JSON.stringify(guard.getLedgerSummary()), { headers });
             }
 
+            // POST /api/upload
+            if (url.pathname === "/api/upload" && req.method === "POST") {
+                try {
+                    const formData = await req.formData();
+                    const file = formData.get("file") as File | null;
+                    const category = (formData.get("category") as string) || "report";
+
+                    if (!file) {
+                        return new Response(JSON.stringify({ error: "No file provided" }), { headers, status: 400 });
+                    }
+
+                    const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+                    const targetPath = path.join(uploadsDir, safeName);
+
+                    const arrayBuffer = await file.arrayBuffer();
+                    fs.writeFileSync(targetPath, Buffer.from(arrayBuffer));
+
+                    return new Response(JSON.stringify({
+                        success: true,
+                        filePath: targetPath,
+                        fileName: file.name,
+                        savedName: safeName,
+                        category
+                    }), { headers });
+                } catch (e: any) {
+                    return new Response(JSON.stringify({ error: e.message }), { headers, status: 500 });
+                }
+            }
+
             // POST /api/run-task
             if (url.pathname === "/api/run-task" && req.method === "POST") {
                 try {
                     const body = await req.json() as {
                         taskPrompt?: string;
                         reportFile?: string;
+                        sopFiles?: string[];
+                        isLiveUpload?: boolean;
                     };
 
                     const taskDescription = body.taskPrompt || "Analyze inspection report for EX-402A, cross-check against refinery maintenance SOP, calculate safe operating life deficit, and prepare formal DOCX approval note.";
-                    const reportPath = body.reportFile 
-                        ? path.join(process.cwd(), "demo-data", body.reportFile)
-                        : path.join(process.cwd(), "demo-data", "inspection-report-A.txt");
+
+                    let reportPath: string;
+                    if (body.reportFile && fs.existsSync(body.reportFile)) {
+                        reportPath = body.reportFile;
+                    } else if (body.reportFile && fs.existsSync(path.join(process.cwd(), "demo-data", body.reportFile))) {
+                        reportPath = path.join(process.cwd(), "demo-data", body.reportFile);
+                    } else {
+                        reportPath = path.join(process.cwd(), "demo-data", "inspection-report-A.txt");
+                    }
 
                     const sopDirectoryPath = path.join(process.cwd(), "demo-data");
                     const outputDirectory = path.join(process.cwd(), "output_deliverables");
@@ -107,7 +155,7 @@ export function startAuraApiServer() {
                     });
 
                     // 1. UNDERSTAND
-                    state = graph.transition(state, "UNDERSTAND", "Inspected industrial request and equipment target parameters.");
+                    state = graph.transition(state, "UNDERSTAND", `Inspected industrial request and input document (${path.basename(reportPath)}).`);
 
                     // 2. ROUTE
                     const visionRoute = await router.routeTask("vision_ocr", taskDescription);
@@ -118,14 +166,32 @@ export function startAuraApiServer() {
                     // 3. PROCESS_DOCUMENT
                     const parsedDoc = await parser.parse(reportPath);
                     state.parsedDocument = parsedDoc;
+
+                    // Trigger vision logging with actual document payload size
+                    const fileBuffer = fs.readFileSync(reportPath);
+                    const docBase64 = fileBuffer.toString("base64");
+                    await router.getProvider().generateVision(
+                        visionRoute.selectedModel.id,
+                        "Extract equipment ID and wall thickness measurements from page 1.",
+                        docBase64,
+                        parsedDoc.fileName,
+                        1,
+                        850,
+                        1100
+                    );
+
                     const targetFinding = parsedDoc.findings[0];
                     state = graph.transition(state, "PROCESS_DOCUMENT", `Parsed ${parsedDoc.fileName}. Extracted equipment ID ${targetFinding.equipmentId} (Measured: ${targetFinding.measuredValue} vs Allowable T-min: ${targetFinding.allowableLimit}).`);
 
                     // 4. RETRIEVE_KNOWLEDGE
                     await retriever.indexDirectory(sopDirectoryPath);
+                    if (fs.existsSync(uploadsDir)) {
+                        await retriever.indexDirectory(uploadsDir);
+                    }
+
                     const evidence = retriever.retrieveEvidence(`${targetFinding.equipmentId} ${targetFinding.defectDescription}`, 5);
                     state.retrievedEvidence = evidence;
-                    state = graph.transition(state, "RETRIEVE_KNOWLEDGE", `Indexed local SOP manuals. Retrieved ${evidence.length} evidence snippets.`);
+                    state = graph.transition(state, "RETRIEVE_KNOWLEDGE", `Indexed local SOP manuals & uploads. Retrieved ${evidence.length} evidence snippets.`);
 
                     // 5. CALCULATE
                     const calcCode = `
@@ -151,6 +217,12 @@ else:
                         deltaMm: Math.abs(targetFinding.allowableNumeric - targetFinding.measuredNumeric)
                     };
                     state = graph.transition(state, "CALCULATE", `Python Sandbox execution completed in ${calcRes.executionTimeMs}ms.`);
+
+                    // Trigger reasoning telemetry
+                    await router.getProvider().generate(
+                        reasoningRoute.selectedModel.id,
+                        `Evaluate SOP repair recommendation for equipment ${targetFinding.equipmentId} with calculated wall thickness deficit.`
+                    );
 
                     // 6. VERIFY & CONDITIONAL BRANCH
                     const verifications = verifier.verify(parsedDoc.findings, evidence);
@@ -182,10 +254,13 @@ else:
                     state = graph.transition(state, "AWAIT_APPROVAL", "Staged deliverables ready. Engineering signoff requested.");
 
                     const telemetry = guard.getLedgerSummary();
+                    const healthStatus = await router.getProvider().getHealthStatus();
 
                     return new Response(JSON.stringify({
                         state,
                         telemetry,
+                        healthStatus,
+                        mode: body.isLiveUpload ? "LIVE UPLOAD" : "DEMO PRESET",
                         success: true
                     }), { headers });
                 } catch (err: any) {
@@ -204,3 +279,4 @@ else:
 if (import.meta.main) {
     startAuraApiServer();
 }
+
