@@ -43,6 +43,7 @@ scratch_sandbox/
 
 # Generated artifacts & deliverables
 output_deliverables/
+demo-data/uploads/
 *.docx
 *.xlsx
 *.pptx

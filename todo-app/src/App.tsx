@@ -24,14 +24,14 @@ const API_BASE = 'http://localhost:3001'
 
 const App = () => {
   const [taskInput, setTaskInput] = useState(
-    'Analyze inspection report for EX-402A, cross-check against refinery maintenance SOP-MNT-2024, calculate wall thickness deficit, and prepare formal DOCX approval note.'
+    'Analyze uploaded document, answer technical questions, write code, or perform engineering analysis.'
   )
-  const [executionMode, setExecutionMode] = useState<'PRESET' | 'LIVE_UPLOAD'>('PRESET')
+  const [executionMode, setExecutionMode] = useState<'PRESET' | 'LIVE_UPLOAD'>('LIVE_UPLOAD')
   const [documentFile, setDocumentFile] = useState('inspection-report-A.txt')
   const [uploadedReportPath, setUploadedReportPath] = useState<string | null>(null)
   const [uploadedReportName, setUploadedReportName] = useState<string | null>(null)
   const [uploadedSopName, setUploadedSopName] = useState<string | null>(null)
-  const [sopDirectory, setSopDirectory] = useState('demo-data (default) + uploaded SOPs')
+  const [sopDirectory, setSopDirectory] = useState('Persistent Company Knowledge Base')
   const [isRunning, setIsRunning] = useState(false)
   const [runCompleted, setRunCompleted] = useState(false)
   const [sovereignMode, setSovereignMode] = useState(true)
@@ -39,6 +39,8 @@ const App = () => {
   const [apiError, setApiError] = useState<string | null>(null)
   const [uploadingReport, setUploadingReport] = useState(false)
   const [uploadingSop, setUploadingSop] = useState(false)
+  const [finalResponse, setFinalResponse] = useState<string | null>(null)
+  const [companyDocs, setCompanyDocs] = useState<Array<{ id: string; originalName: string; fileType: string; uploadedAt: string }>>([])
 
   // Ollama Health Status State
   const [healthStatus, setHealthStatus] = useState<{
@@ -76,16 +78,13 @@ const App = () => {
     auditLedger: []
   })
 
-  // Demo Execution State
+  // Dynamic Execution State
   const [steps, setSteps] = useState<TimelineStep[]>([
-    { id: 1, phase: 'UNDERSTAND', title: 'Task Inspection', status: 'pending', details: 'Waiting to start industrial task analysis...' },
-    { id: 2, phase: 'ROUTE', title: 'Task & Model Router Selection', status: 'pending', details: 'Routing task to on-premise vision and reasoning models...' },
-    { id: 3, phase: 'DOCUMENT_PROCESSING', title: 'Multimodal Document Ingestion', status: 'pending', details: 'Parsing PDF inspection report & extracting equipment findings...' },
-    { id: 4, phase: 'KNOWLEDGE_RETRIEVAL', title: 'On-Premise SOP Search', status: 'pending', details: 'Indexing local SOP manuals & cross-referencing findings...' },
-    { id: 5, phase: 'ANALYSIS_CALCULATION', title: 'Sandboxed Engineering Calculation', status: 'pending', details: 'Executing Python sandbox script for wall thickness T-min calculation...' },
-    { id: 6, phase: 'VERIFICATION', title: 'Evidence & Claim Verification', status: 'pending', details: 'Verifying equipment findings against SOP safety standards...' },
-    { id: 7, phase: 'DOCUMENT_GENERATION', title: 'Deliverables Generation', status: 'pending', details: 'Generating DOCX Approval Note, XLSX Sheet, and PPTX Executive Summary...' },
-    { id: 8, phase: 'HUMAN_APPROVAL', title: 'Engineering Approval Gate', status: 'pending', details: 'Staging generated deliverables for engineering signoff...' }
+    { id: 1, phase: 'UNDERSTAND', title: 'Task & Intent Classifier', status: 'pending', details: 'Analyzing task request & file input...' },
+    { id: 2, phase: 'ROUTE', title: 'Task-Based Model Selection', status: 'pending', details: 'Routing to local open-weight model based on task intent...' },
+    { id: 3, phase: 'SKILL', title: 'Skill & Tool Resolution', status: 'pending', details: 'Selecting required skill contract and tools...' },
+    { id: 4, phase: 'EXECUTE', title: 'Agent Execution & Reasoning', status: 'pending', details: 'Executing task reasoning, sandbox math, or OCR...' },
+    { id: 5, phase: 'VERIFY', title: 'Verification & Output Response', status: 'pending', details: 'Formulating verified response & staging deliverables...' }
   ])
 
   const [evidenceList, setEvidenceList] = useState<EvidenceCard[]>([])
@@ -93,11 +92,35 @@ const App = () => {
   const [routingDetails, setRoutingDetails] = useState<Array<{ task: string; model: string; reason: string; status: string }>>([])
   const [deliverables, setDeliverables] = useState<{ docx?: string; xlsx?: string; pptx?: string }>({})
 
-  // Fetch health & telemetry on load
+  // Fetch health, telemetry, & knowledge docs on load
   useEffect(() => {
     fetchSovereigntyTelemetry()
     fetchOllamaHealth()
+    fetchCompanyKnowledge()
   }, [])
+
+  const fetchCompanyKnowledge = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/knowledge`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.documents) setCompanyDocs(data.documents)
+      }
+    } catch (e) {
+      // Knowledge API offline
+    }
+  }
+
+  const deleteKnowledgeDoc = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/knowledge/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        fetchCompanyKnowledge()
+      }
+    } catch (e) {
+      // Delete error
+    }
+  }
 
   const fetchOllamaHealth = async () => {
     try {
@@ -160,22 +183,25 @@ const App = () => {
       formData.append('category', category)
       if (currentRunId) formData.append('runId', currentRunId)
 
-      const res = await fetch(`${API_BASE}/api/upload`, {
+      const endpoint = category === 'sop' ? `${API_BASE}/api/knowledge` : `${API_BASE}/api/upload`
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         body: formData
       })
 
       if (!res.ok) throw new Error('Upload failed')
       const data = await res.json()
-      if (data.runId) setCurrentRunId(data.runId)
 
       if (category === 'report') {
+        if (data.runId) setCurrentRunId(data.runId)
         setUploadedReportPath(data.filePath)
         setUploadedReportName(data.fileName)
         setExecutionMode('LIVE_UPLOAD')
       } else {
-        setUploadedSopName(data.fileName)
-        setSopDirectory(`Uploaded SOP: ${data.fileName}`)
+        fetchCompanyKnowledge()
+        setUploadedSopName(data.document?.originalName || file.name)
+        setSopDirectory(`Indexed in Enterprise Knowledge Base`)
       }
     } catch (err: any) {
       setApiError(`Upload failed: ${err.message}`)
@@ -194,12 +220,19 @@ const App = () => {
     setCalculationResult('')
     setRoutingDetails([])
     setDeliverables({})
+    setFinalResponse(null)
 
     // Refresh health status before run
     await fetchOllamaHealth()
 
     // Reset steps
-    setSteps(prev => prev.map(s => ({ ...s, status: 'pending' })))
+    setSteps([
+      { id: 1, phase: 'UNDERSTAND', title: 'Task & Intent Classifier', status: 'running', details: 'Analyzing task request & file input...' },
+      { id: 2, phase: 'ROUTE', title: 'Task-Based Model Selection', status: 'pending', details: 'Routing to local open-weight model based on task intent...' },
+      { id: 3, phase: 'SKILL', title: 'Skill & Tool Resolution', status: 'pending', details: 'Selecting required skill contract and tools...' },
+      { id: 4, phase: 'EXECUTE', title: 'Agent Execution & Reasoning', status: 'pending', details: 'Executing task reasoning, sandbox math, or OCR...' },
+      { id: 5, phase: 'VERIFY', title: 'Verification & Output Response', status: 'pending', details: 'Formulating verified response & staging deliverables...' }
+    ])
 
     const updateStep = (id: number, status: 'running' | 'completed', details?: string, model?: string) => {
       setSteps(prev => prev.map(s => s.id === id ? { ...s, status, details: details || s.details, model } : s))
@@ -210,10 +243,6 @@ const App = () => {
       : documentFile
 
     try {
-      // Step 1: Understand
-      updateStep(1, 'running', `Inspecting task prompt & document (${executionMode === 'LIVE_UPLOAD' ? (uploadedReportName || 'uploaded document') : documentFile})...`)
-      await new Promise(r => setTimeout(r, 400))
-
       // Call live backend API
       const res = await fetch(`${API_BASE}/api/run-task`, {
         method: 'POST',
@@ -231,18 +260,16 @@ const App = () => {
 
       const result = await res.json()
       const state = result.state
+      const plan = result.plan
+
       if (result.runId) setCurrentRunId(result.runId)
+      if (result.healthStatus) setHealthStatus(result.healthStatus)
 
-      if (result.healthStatus) {
-        setHealthStatus(result.healthStatus)
-      }
-
-      // Animate backend execution state steps
-      updateStep(1, 'completed', `Task understood: Analyzed ${executionMode === 'LIVE_UPLOAD' ? uploadedReportName : documentFile} & staged deliverable output.`)
+      updateStep(1, 'completed', `Task Intent Classified: ${plan?.category || 'GENERAL_QA'} (${plan?.description || 'Task Analysis'})`)
 
       // Step 2: Route
-      updateStep(2, 'running', 'Routing task to on-premise local models...')
-      await new Promise(r => setTimeout(r, 400))
+      updateStep(2, 'running', 'Routing task to on-premise local model...')
+      await new Promise(r => setTimeout(r, 300))
       const routes = (state.routesSelected || []).map((r: any) => ({
         task: r.taskType,
         model: r.selectedModel.displayName,
@@ -250,72 +277,49 @@ const App = () => {
         status: r.status
       }))
       setRoutingDetails(routes)
-      const visionStatus = routes.find((r: any) => r.task === 'vision_ocr')?.status || 'LOCAL FALLBACK'
-      updateStep(2, 'completed', `Routed: Multimodal Vision (${healthStatus.visionModelName}) & Engineering Reasoning (${healthStatus.reasoningModelName}) — [Status: ${visionStatus}]`, healthStatus.reasoningModelName)
+      updateStep(2, 'completed', `Routed Model: ${routes[0]?.model || healthStatus.reasoningModelName}`, routes[0]?.model || healthStatus.reasoningModelName)
 
-      // Step 3: Document Processing
-      const targetName = executionMode === 'LIVE_UPLOAD' ? (uploadedReportName || 'uploaded document') : documentFile
-      updateStep(3, 'running', `Ingesting ${targetName} via local parser...`, healthStatus.visionModelName)
-      await new Promise(r => setTimeout(r, 400))
-      const finding = state.parsedDocument?.findings?.[0]
-      const findingDetails = finding 
-        ? `Extracted equipment ID ${finding.equipmentId} (Measured: ${finding.measuredValue} vs Allowable: ${finding.allowableLimit}).`
-        : 'Parsed document findings extracted.'
-      updateStep(3, 'completed', findingDetails, healthStatus.visionModelName)
+      // Step 3: Skill Resolution
+      updateStep(3, 'running', 'Selecting skills and tools...')
+      await new Promise(r => setTimeout(r, 300))
+      updateStep(3, 'completed', `Resolved Skills: ${(state.selectedSkills || []).join(', ') || 'General Q&A'}`)
 
-      // Step 4: Knowledge Retrieval
-      updateStep(4, 'running', `Searching local SOP directory (${sopDirectory})...`)
-      await new Promise(r => setTimeout(r, 400))
-      const evList = (state.retrievedEvidence || []).map((e: any) => ({
-        sourceFile: e.sourceFile,
-        section: e.sectionOrPage,
-        snippet: e.matchedContent
-      }))
-      setEvidenceList(evList)
-      updateStep(4, 'completed', `Retrieved ${evList.length} verified SOP evidence snippets from internal manuals.`)
+      // Step 4: Execution
+      updateStep(4, 'running', 'Executing reasoning and tool sequence...')
+      await new Promise(r => setTimeout(r, 300))
 
-      // Step 5: Sandboxed Calculation
-      updateStep(5, 'running', 'Executing Python calculation in isolated sandbox...')
-      await new Promise(r => setTimeout(r, 400))
-      setCalculationResult(state.calculationOutput?.stdout || 'Wall thickness calculation completed.')
-      updateStep(5, 'completed', `Calculation complete: Wall thickness evaluation executed in ${state.calculationOutput?.executionTimeMs || 25}ms.`)
+      if (state.retrievedEvidence && state.retrievedEvidence.length > 0) {
+        const evList = state.retrievedEvidence.map((e: any) => ({
+          sourceFile: e.sourceFile,
+          section: e.sectionOrPage,
+          snippet: e.matchedContent
+        }))
+        setEvidenceList(evList)
+      }
 
-      // Step 6: Verification & Branching
-      updateStep(6, 'running', 'Validating claims and evaluating conditional decision branch...')
-      await new Promise(r => setTimeout(r, 400))
-      const branchText = state.conditionalBranchTaken === 'CRITICAL_HAZARD_ISOLATION'
-        ? 'BRANCH TAKEN: Measured thickness < T-min -> CRITICAL_HAZARD_ISOLATION & Approval Note.'
-        : 'BRANCH TAKEN: Measured thickness >= T-min -> NORMAL_MAINTENANCE_MONITORING & Inspection Certificate.'
-      updateStep(6, 'completed', branchText)
+      if (state.calculationOutput?.stdout) {
+        setCalculationResult(state.calculationOutput.stdout)
+      }
 
-      // Step 7: Document Generation
-      updateStep(7, 'running', 'Programmatically generating DOCX, XLSX, and PPTX deliverables...')
-      await new Promise(r => setTimeout(r, 500))
+      updateStep(4, 'completed', 'Completed agent tool execution.')
+
+      // Step 5: Verification & Response
+      updateStep(5, 'running', 'Formulating verified response...')
+      await new Promise(r => setTimeout(r, 300))
+
+      if (result.finalResponse) {
+        setFinalResponse(result.finalResponse)
+      }
+
       setDeliverables(state.deliverables || {})
-      updateStep(7, 'completed', 'Created Word DOCX, Excel XLSX Sheet, and PowerPoint PPTX Deck.')
-
-      // Step 8: Human Approval
-      updateStep(8, 'completed', 'Staged deliverables ready. Engineering approval requested.')
+      updateStep(5, 'completed', 'Task execution complete.')
 
       if (result.telemetry) setTelemetry(result.telemetry)
       setRunCompleted(true)
     } catch (err: any) {
       setApiError(`API Execution note: ${err.message}`)
-      
-      updateStep(1, 'completed', 'Task understood: Inspection report analysis & deliverable generation.')
-      updateStep(2, 'completed', `Routed: Multimodal Vision (${healthStatus.visionModelName}) & Reasoning (${healthStatus.reasoningModelName})`, healthStatus.reasoningModelName)
-      updateStep(3, 'completed', `Extracted equipment finding from ${executionMode === 'LIVE_UPLOAD' ? uploadedReportName : documentFile}.`, healthStatus.visionModelName)
-      updateStep(4, 'completed', 'Retrieved verified SOP evidence snippets from internal refinery manual.')
-      setEvidenceList([
-        { sourceFile: 'sop-maintenance.txt', section: 'SECTION 2: T-MIN STANDARDS', snippet: 'Per ASME Section VIII & API 510, wall thickness below calculated T-min must be classified immediately as a CRITICAL SAFETY HAZARD.' },
-        { sourceFile: 'sop-maintenance.txt', section: 'SECTION 4.2: EMERGENCY REPAIR PROTOCOL', snippet: 'When measured wall thickness is <= 4.50 mm: Immediately flag equipment for CRITICAL ISOLATION and initiate weld overlay patch.' }
-      ])
-      updateStep(5, 'completed', 'Calculation complete: Wall thickness evaluation executed.')
-      setCalculationResult('CRITICAL DEFICIT: Wall thickness is below minimum allowable limit (T-min).\nIMMEDIATE ISOLATION AND WELD OVERLAY REQUIRED.')
-      updateStep(6, 'completed', 'BRANCH TAKEN: Measured thickness < T-min -> CRITICAL_HAZARD_ISOLATION.')
-      updateStep(7, 'completed', 'Created Word DOCX Approval Note, XLSX Analysis Sheet, and PPTX Deck.')
-      updateStep(8, 'completed', 'Staged deliverables ready. Engineering approval requested.')
-      setRunCompleted(true)
+      updateStep(1, 'completed', 'Task intent processing failed.')
+      updateStep(5, 'completed', 'Task execution halted with error.')
     } finally {
       setIsRunning(false)
     }

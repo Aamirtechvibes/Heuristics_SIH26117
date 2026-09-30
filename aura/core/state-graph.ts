@@ -4,19 +4,37 @@ import { SovereigntyGuard } from "./sovereignty-guard";
 
 export type AgentNodeName =
     | "UNDERSTAND"
-    | "PLAN"
-    | "ROUTE"
+    | "CLASSIFY_TASK"
+    | "PLAN_EXECUTION"
+    | "ROUTE_MODELS"
+    | "SELECT_SKILL"
+    | "EXECUTE_TOOL"
     | "PROCESS_DOCUMENT"
     | "RECOVERY_OCR_FALLBACK"
     | "RETRIEVE_KNOWLEDGE"
-    | "CALCULATE"
-    | "VERIFY_DECISION"
+    | "EXECUTE_CODE"
+    | "VERIFY"
     | "BRANCH_CRITICAL_HAZARD"
     | "BRANCH_NORMAL_MAINTENANCE"
-    | "GENERATE_DELIVERABLES"
+    | "CALCULATE"
+    | "GENERATE_ARTIFACT"
     | "AWAIT_APPROVAL"
     | "COMPLETED"
     | "ERROR";
+
+export type TaskCategory =
+    | "GENERAL_QA"
+    | "CODE_GEN"
+    | "CODE_DEBUG"
+    | "CODE_TEST"
+    | "DOCUMENT_ANALYSIS"
+    | "DOCUMENT_QA"
+    | "SPREADSHEET_ANALYSIS"
+    | "MULTIMODAL_VISION"
+    | "PRESENTATION_GEN"
+    | "ARTIFACT_BUILD"
+    | "KNOWLEDGE_SEARCH"
+    | "INDUSTRIAL_INSPECTION";
 
 export interface NodeTransitionRecord {
     stepNumber: number;
@@ -30,20 +48,24 @@ export interface NodeTransitionRecord {
 export interface AuraState {
     runId: string;
     taskDescription: string;
-    documentPath: string;
-    sopDirectoryPath: string;
+    taskCategory: TaskCategory;
+    documentPath?: string;
+    sopDirectoryPath?: string;
     outputDirectory: string;
     currentNode: AgentNodeName;
     history: NodeTransitionRecord[];
     routesSelected: RouteSelectionResult[];
+    selectedSkills: string[];
+    toolsUsed: string[];
     parsedDocument?: any;
     retrievedEvidence: any[];
-    calculationOutput?: { stdout: string; executionTimeMs: number; isCritical: boolean; deltaMm: number };
-    verificationStatus: "SUPPORTED" | "UNCERTAIN";
-    conditionalBranchTaken: "CRITICAL_HAZARD_ISOLATION" | "NORMAL_MAINTENANCE_MONITORING";
+    calculationOutput?: { stdout: string; executionTimeMs: number; isCritical?: boolean; deltaMm?: number };
+    verificationStatus: "SUPPORTED" | "UNCERTAIN" | "NOT_REQUIRED";
+    conditionalBranchTaken?: string;
     recoveryTriggered: boolean;
-    deliverables: { docx?: string; xlsx?: string; pptx?: string };
-    approvalState: "PENDING" | "APPROVED" | "REJECTED";
+    deliverables: { docx?: string; xlsx?: string; pptx?: string; pdf?: string };
+    finalResponse?: string;
+    approvalState: "PENDING" | "APPROVED" | "NOT_REQUIRED" | "REJECTED";
     errors: string[];
     startedAt: string;
     completedAt?: string;
@@ -60,25 +82,28 @@ export class AuraAgentGraph {
 
     public createInitialState(options: {
         taskDescription: string;
-        documentPath: string;
-        sopDirectoryPath: string;
+        taskCategory?: TaskCategory;
+        documentPath?: string;
+        sopDirectoryPath?: string;
         outputDirectory: string;
     }): AuraState {
         return {
             runId: `AURA-RUN-${Date.now()}`,
             taskDescription: options.taskDescription,
+            taskCategory: options.taskCategory || "GENERAL_QA",
             documentPath: options.documentPath,
             sopDirectoryPath: options.sopDirectoryPath,
             outputDirectory: options.outputDirectory,
             currentNode: "UNDERSTAND",
             history: [],
             routesSelected: [],
+            selectedSkills: [],
+            toolsUsed: [],
             retrievedEvidence: [],
-            verificationStatus: "SUPPORTED",
-            conditionalBranchTaken: "CRITICAL_HAZARD_ISOLATION",
+            verificationStatus: "NOT_REQUIRED",
             recoveryTriggered: false,
             deliverables: {},
-            approvalState: "PENDING",
+            approvalState: "NOT_REQUIRED",
             errors: [],
             startedAt: new Date().toISOString()
         };

@@ -1,0 +1,47 @@
+{
+  "updatedAt": "2026-09-30T05:57:07.054Z",
+  "documents": [
+    {
+      "id": "doc_1790747091136_djei",
+      "filename": "doc_1790747091136_djei_company-policy.txt",
+      "originalName": "company-policy.txt",
+      "filePath": "/Users/aamirkhan/Developer/Agent Aamir/demo-data/company-knowledge/doc_1790747091136_djei_company-policy.txt",
+      "fileType": "txt",
+      "fileSizeBytes": 57,
+      "checksum": "c16461d24776638140ddce1508f0e1790507c61f1dd09d71b7e04a5c04b4fa7c",
+      "uploadedAt": "2026-09-30T05:44:51.137Z",
+      "updatedAt": "2026-09-30T05:44:51.137Z",
+      "chunkCount": 1,
+      "status": "INDEXED",
+      "tags": []
+    },
+    {
+      "id": "doc_1790747599208_s8la",
+      "filename": "doc_1790747599208_s8la_company-policy.txt",
+      "originalName": "company-policy.txt",
+      "filePath": "/Users/aamirkhan/Developer/Agent Aamir/demo-data/company-knowledge/doc_1790747599208_s8la_company-policy.txt",
+      "fileType": "txt",
+      "fileSizeBytes": 57,
+      "checksum": "c16461d24776638140ddce1508f0e1790507c61f1dd09d71b7e04a5c04b4fa7c",
+      "uploadedAt": "2026-09-30T05:53:19.208Z",
+      "updatedAt": "2026-09-30T05:53:19.208Z",
+      "chunkCount": 1,
+      "status": "INDEXED",
+      "tags": []
+    },
+    {
+      "id": "doc_1790747701166_aq3n",
+      "filename": "doc_1790747701166_aq3n_company-policy.txt",
+      "originalName": "company-policy.txt",
+      "filePath": "/Users/aamirkhan/Developer/Agent Aamir/demo-data/company-knowledge/doc_1790747701166_aq3n_company-policy.txt",
+      "fileType": "txt",
+      "fileSizeBytes": 57,
+      "checksum": "c16461d24776638140ddce1508f0e1790507c61f1dd09d71b7e04a5c04b4fa7c",
+      "uploadedAt": "2026-09-30T05:55:01.166Z",
+      "updatedAt": "2026-09-30T05:55:01.166Z",
+      "chunkCount": 1,
+      "status": "INDEXED",
+      "tags": []
+    }
+  ]
+}
